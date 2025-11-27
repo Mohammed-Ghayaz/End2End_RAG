@@ -1,0 +1,12 @@
+embedding_model:
+  provider: "huggingface"
+
+retriever:
+  top_k: 10
+
+llm_model:
+  google: 
+    provider: "google"
+    model: "gemini-2.5-flash"
+    temperature: 0
+    max_output_tokens: 2048
