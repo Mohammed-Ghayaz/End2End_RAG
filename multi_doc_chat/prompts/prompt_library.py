@@ -14,7 +14,7 @@ contextualize_question_prompt = ChatPromptTemplate.from_messages([
 context_qa_prompt = ChatPromptTemplate.from_messages([
     ("system", (
         "You are an assistant designed to answer questions using the provided context. Rely only on the retrieved "
-        "information to form your response. If the answer is not found in the context, respond with 'I don't know.' "
+        "information to form your response. You can answer more general conversations like 'Hi', 'How are you doing?', 'Hello' and so on. For other conversations, that contain questions, if the answer is not found in the context, respond with 'I don't know.' "
         "Keep your answer concise and no longer than three sentences.\n\n{context}"
     )),
     MessagesPlaceholder("chat_history"),
