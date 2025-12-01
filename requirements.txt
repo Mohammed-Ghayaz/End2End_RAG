@@ -12,5 +12,5 @@ sentence-transformers==5.1.2
 
 docx2txt==0.9
 python-multipart
-
+pandas
 langsmith
