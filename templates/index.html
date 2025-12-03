@@ -1,52 +1,198 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MultiDocChat</title>
   <link rel="stylesheet" href="/static/styles.css" />
-  <style>
-    /* Minimal inline tweaks; most styles live in styles.css */
-  </style>
+  <meta name="color-scheme" content="light dark" />
   <script>
     const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
     let sessionId = localStorage.getItem('mdc_session_id') || '';
+    let sessions = JSON.parse(localStorage.getItem('mdc_sessions') || '{}');
+
+    function typeMessage(element, text, speed = 15) {
+      return new Promise((resolve) => {
+        element.textContent = '';
+        let i = 0;
+        const type = () => {
+          if (i < text.length) {
+            element.textContent += text[i];
+            i++;
+            setTimeout(type, speed);
+          } else {
+            resolve();
+          }
+        };
+        type();
+      });
+    }
 
     async function uploadFiles(evt) {
-      evt.preventDefault();
+      evt?.preventDefault();
       const input = $('#file-input');
       const files = input.files;
       if (!files || files.length === 0) {
         toast('Please choose at least one file');
         return;
       }
+      
+      // Show file preview
+      showFilePreview(files);
       toggleIndexing(true);
+      
       try {
         const fd = new FormData();
         for (const f of files) fd.append('files', f);
+        console.log('Uploading', files.length, 'file(s)...');
+        
         const res = await fetch('/upload', { method: 'POST', body: fd });
-        if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed');
-        const data = await res.json();
+        console.log('Upload response status:', res.status, res.statusText);
+        
+        if (!res.ok) {
+          let errorMsg = 'Upload failed';
+          try {
+            const errData = await res.json();
+            errorMsg = errData.detail || `Server error: ${res.status}`;
+          } catch {
+            errorMsg = `Server error: ${res.status} ${res.statusText}`;
+          }
+          throw new Error(errorMsg);
+        }
+        
+        let data;
+        try {
+          data = await res.json();
+          console.log('Upload response data:', data);
+        } catch (parseErr) {
+          console.error('Failed to parse response:', parseErr);
+          throw new Error('Invalid server response (failed to parse JSON)');
+        }
+        
+        if (!data.session_id) {
+          console.error('Missing session_id in response:', data);
+          throw new Error('Invalid response: missing session_id');
+        }
+        
         sessionId = data.session_id;
+        console.log('Session ID saved:', sessionId);
         localStorage.setItem('mdc_session_id', sessionId);
-        $('#chat').style.display = 'block';
-        toast('Indexing complete. You can chat now.');
+        
+        // Save session
+        sessions[sessionId] = {
+          id: sessionId,
+          files: Array.from(files).map(f => f.name),
+          createdAt: new Date().toISOString()
+        };
+        localStorage.setItem('mdc_sessions', JSON.stringify(sessions));
+        
+        $('#chat').classList.remove('hidden');
+        $('#uploader').style.opacity = '0.6';
+        toast('✓ Indexing complete. You can chat now.');
+        updateSessionList();
       } catch (e) {
-        console.error(e);
-        toast('Indexing failed. Try re-uploading.');
+        console.error('Upload error:', e);
+        toast('✗ ' + e.message);
       } finally {
         toggleIndexing(false);
       }
+    }
+
+    function showFilePreview(files) {
+      const preview = $('#file-preview');
+      if (!preview) return;
+      preview.innerHTML = '<div class="file-list">';
+      Array.from(files).forEach(f => {
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        item.innerHTML = `<span class="file-icon">📄</span><span class="file-name">${f.name}</span><span class="file-size">${(f.size / 1024).toFixed(1)}KB</span>`;
+        preview.querySelector('.file-list').appendChild(item);
+      });
+      preview.innerHTML += '</div>';
+      preview.style.display = 'block';
+    }
+
+    function updateSessionList() {
+      const list = $('#session-list');
+      if (!list) return;
+      list.innerHTML = '';
+      
+      if (Object.keys(sessions).length === 0) {
+        list.innerHTML = '<p class="muted">No sessions yet — upload documents to start</p>';
+        return;
+      }
+      
+      Object.entries(sessions).forEach(([id, sess]) => {
+        const item = document.createElement('div');
+        item.className = 'session-item ' + (id === sessionId ? 'active' : '');
+        
+        const main = document.createElement('div');
+        main.className = 'sess-main';
+        main.innerHTML = `<strong>${sess.files ? sess.files[0] : 'Session'}</strong><span class="sess-time">${new Date(sess.createdAt).toLocaleDateString()}</span>`;
+        
+        const btn = document.createElement('button');
+        btn.className = 'sess-btn';
+        btn.textContent = 'Load';
+        btn.setAttribute('data-session-id', id);
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          loadSession(id);
+        });
+        
+        item.appendChild(main);
+        item.appendChild(btn);
+        list.appendChild(item);
+      });
+    }
+
+    function loadSession(id) {
+      console.log('Loading session:', id);
+      
+      if (!id || !sessions[id]) {
+        console.error('Session not found:', id);
+        toast('Session not found');
+        return;
+      }
+      
+      sessionId = id;
+      localStorage.setItem('mdc_session_id', sessionId);
+      console.log('Session set to:', sessionId);
+      
+      // Show chat panel
+      const chatPanel = $('#chat');
+      if (chatPanel) {
+        chatPanel.classList.remove('hidden');
+        console.log('Chat panel shown');
+      }
+      
+      // Clear previous messages
+      const msgContainer = $('#messages');
+      if (msgContainer) {
+        msgContainer.innerHTML = '';
+        console.log('Messages cleared');
+      }
+      
+      // Update session list to show active state
+      updateSessionList();
+      
+      toast('✓ Session loaded: ' + sessions[id].files[0]);
     }
 
     async function sendMessage() {
       const input = $('#message-input');
       const text = input.value.trim();
       if (!sessionId) { toast('Please upload documents first.'); return; }
-      if (!text) { return; }
+      if (!text) return;
+      
       appendMessage('user', text);
       input.value = '';
+      autoResizeTextarea();
+      
+      // Create loader bubble for assistant response
+      const loaderBubble = appendMessage('assistant', '', true);
       toggleThinking(true);
+      
       try {
         const res = await fetch('/chat', {
           method: 'POST',
@@ -55,93 +201,168 @@
         });
         if (!res.ok) throw new Error((await res.json()).detail || 'Chat failed');
         const data = await res.json();
-        appendMessage('assistant', data.answer);
+        
+        // Replace loader bubble with actual message
+        if (loaderBubble) {
+          loaderBubble.classList.remove('typing');
+          loaderBubble.innerHTML = '';
+          await typeMessage(loaderBubble, data.answer, 8);
+        }
       } catch (e) {
         console.error(e);
         toast('Thinking failed. Try again.');
+        if (loaderBubble) {
+          loaderBubble.textContent = 'Error: Failed to get response. Try again.';
+          loaderBubble.classList.remove('typing');
+        }
       } finally {
         toggleThinking(false);
       }
     }
 
-    function appendMessage(role, text) {
+    function appendMessage(role, text, isLoader = false) {
       const container = $('#messages');
+      const wrap = document.createElement('div');
+      wrap.className = 'message-row ' + (role === 'user' ? 'right' : 'left');
+      wrap.style.animation = 'slideIn 0.3s ease-out';
+      
       const bubble = document.createElement('div');
       bubble.className = 'bubble ' + (role === 'user' ? 'user' : 'assistant');
-      bubble.textContent = text;
-      container.appendChild(bubble);
+      
+      if (isLoader) {
+        bubble.classList.add('typing');
+        bubble.innerHTML = '<span class="dots"><span></span><span></span><span></span></span>';
+      } else if (role === 'user') {
+        bubble.textContent = text;
+      } else {
+        bubble.textContent = text;
+      }
+      
+      wrap.appendChild(bubble);
+      container.appendChild(wrap);
       container.scrollTop = container.scrollHeight;
+      
+      return bubble;
     }
 
     function toggleIndexing(on) {
       $('#upload-btn').disabled = on;
-      $('#indexing').style.display = on ? 'inline-block' : 'none';
+      const sp = $('#indexing');
+      if (sp) sp.style.display = on ? 'inline-block' : 'none';
     }
 
     function toggleThinking(on) {
       $('#send-btn').disabled = on;
-      $('#thinking').style.display = on ? 'inline-block' : 'none';
+      const sp = $('#thinking');
+      if (sp) sp.style.display = on ? 'inline-block' : 'none';
+    }
+
+    function autoResizeTextarea() {
+      const ta = $('#message-input');
+      ta.style.height = 'auto';
+      ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
     }
 
     function toast(msg) {
       const el = $('#toast');
       el.textContent = msg;
-      el.style.opacity = '1';
-      setTimeout(() => el.style.opacity = '0', 2500);
+      el.classList.add('visible');
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => el.classList.remove('visible'), 3500);
     }
 
     window.addEventListener('DOMContentLoaded', () => {
-      if (sessionId) {
-        $('#chat').style.display = 'block';
+      console.log('Page loaded. Current sessionId:', sessionId);
+      console.log('Available sessions:', Object.keys(sessions));
+      
+      // If we have a stored session, load it
+      if (sessionId && sessions[sessionId]) {
+        console.log('Auto-loading saved session:', sessionId);
+        const chatPanel = $('#chat');
+        if (chatPanel) {
+          chatPanel.classList.remove('hidden');
+        }
       }
+      
+      updateSessionList();
+      
       $('#upload-form').addEventListener('submit', uploadFiles);
       $('#send-btn').addEventListener('click', sendMessage);
       $('#message-input').addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
       });
+      $('#message-input').addEventListener('input', autoResizeTextarea);
+
       const drop = $('#dropzone');
-      drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('hover'); });
-      drop.addEventListener('dragleave', () => drop.classList.remove('hover'));
+      ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('hover'); }));
+      ['dragleave','drop','dragend'].forEach(ev => drop.addEventListener(ev, () => drop.classList.remove('hover')));
       drop.addEventListener('drop', (e) => {
         e.preventDefault();
-        drop.classList.remove('hover');
-        $('#file-input').files = e.dataTransfer.files;
+        const files = e.dataTransfer.files;
+        if (files && files.length) $('#file-input').files = files;
       });
     });
   </script>
-  <meta name="color-scheme" content="light dark" />
 </head>
 <body>
-  <header>
-    <h1>MultiDocChat</h1>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2L2 7v10l10 5 10-5V7L12 2z"/></svg>
+      <div>
+        <h1>MultiDocChat</h1>
+        <p class="tag">Ask questions over your documents</p>
+      </div>
+    </div>
+    <nav>
+      <button id="upload-btn-top" class="ghost" onclick="document.getElementById('file-input').click()">Upload Files</button>
+    </nav>
   </header>
 
-  <main>
-    <section id="uploader">
-      <form id="upload-form">
-        <div id="dropzone">
-          <p>Drag and drop files here</p>
-          <p>or</p>
-          <label class="btn">
-            Choose files
-            <input id="file-input" type="file" name="files" multiple hidden />
-          </label>
+  <div class="container">
+    <aside class="sidebar">
+      <section class="card">
+        <h3>Upload & Index</h3>
+        <form id="upload-form">
+          <div id="dropzone" class="dropzone" aria-label="File drop area">
+            <div class="dz-content">
+              <p class="dz-title">Drag & drop files here</p>
+              <p class="dz-sub">PDF, TXT, DOCX — multi-file supported</p>
+              <input id="file-input" type="file" name="files" multiple hidden />
+              <div class="dz-actions">
+                <label class="btn" for="file-input">Choose files</label>
+                <button id="upload-btn" class="primary" type="submit">Upload & Index</button>
+              </div>
+            </div>
+          </div>
+          <div id="file-preview" style="display:none;margin-top:12px"></div>
+          <div class="status-row">
+            <span id="indexing" class="muted" style="display:none">Indexing…</span>
+          </div>
+        </form>
+      </section>
+
+      <section class="card sessions">
+        <h3>Sessions</h3>
+        <div id="session-list" class="session-list">
+          <p class="muted">No sessions yet — upload documents to start</p>
         </div>
-        <button id="upload-btn" style="background-color: rgb(0, 94, 225); color: white; border-radius: 6px; cursor: pointer;" type="submit">Upload & Index</button>
-        <span id="indexing" class="hint" style="display:none;">Indexing…</span>
-      </form>
-    </section>
+      </section>
+    </aside>
 
-    <section id="chat" style="display:none;">
-      <div id="messages" class="messages"></div>
-      <div class="composer">
-        <textarea id="message-input" rows="2" placeholder="Ask about your documents…"></textarea>
-        <button id="send-btn" style="background-color: rgb(0, 94, 225); color: white; border-radius: 6px; cursor: pointer;">Send</button>
-        <span id="thinking" class="hint" style="display:none;">Thinking…</span>
-      </div>
-    </section>
-  </main>
+    <main class="workspace">
+      <section id="chat" class="chat-panel hidden">
+        <div class="messages" id="messages" role="log" aria-live="polite"></div>
+        <div class="composer">
+          <textarea id="message-input" rows="2" placeholder="Ask about your documents…" aria-label="Message input"></textarea>
+          <div class="composer-actions">
+            <button id="send-btn" class="primary">Send</button>
+            <span id="thinking" class="muted" style="display:none">Thinking…</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
