@@ -24,7 +24,7 @@ python-multipart
 pandas
 langsmith
 pytest
-
+structlog
 # FastAPI / server
 fastapi==0.115.6
 uvicorn==0.32.1
