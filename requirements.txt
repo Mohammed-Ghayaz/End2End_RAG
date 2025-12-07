@@ -1,6 +1,7 @@
 python-dotenv==1.2.1
 ipykernel==6.30.1
 pypdf
+structlog
 
 # LangChain ecosystem
 langchain==1.0.8
