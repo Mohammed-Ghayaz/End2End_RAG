@@ -8,14 +8,16 @@ langchain-core==1.1.0
 langchain-google-genai==3.1.0
 langchain-huggingface==1.1.0
 
-# Vector store
+# Vector DB
 faiss-cpu==1.13.0
 
-# Sentence Transformers (requires CPU torch)
+# Critical ML dependencies
+numpy==1.26.4
 sentence-transformers==2.2.2
 
-# CPU-only PyTorch (CRITICAL!)
+# CPU-only torch (correct for Render)
 torch==2.2.1+cpu
+torchvision==0.17.1+cpu
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Utilities
@@ -24,8 +26,8 @@ python-multipart
 pandas
 langsmith
 pytest
-structlog
-# FastAPI / server
+
+# FastAPI stack
 fastapi==0.115.6
 uvicorn==0.32.1
 Jinja2==3.1.4
