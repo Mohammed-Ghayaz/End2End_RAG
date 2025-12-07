@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Dict, List
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -15,6 +16,9 @@ from multi_doc_chat.src.document_chat.retrieval import ConversationalRAG
 from langchain_core.messages import HumanMessage, AIMessage
 from multi_doc_chat.exception.custom_exception import DocumentPortalException
 from multi_doc_chat.model.models import UploadResponse, ChatRequest, ChatResponse
+
+load_dotenv()
+port = os.getenv("PORT", "8000")
 
 app = FastAPI(title="MultiDocChat", version="0.1.0")
 
